@@ -371,59 +371,83 @@ def select_final_entities(scored: Dict[str, List[ScoredCandidate]], raw_text: st
         "directors": directors_mapped,
         "capital": capital_text
     }
-
 # ---------------------------------------------------------------------------
-# 5. PIPELINE COMPLET
+# 5. PIPELINE COMPLET & FUSION (Mise à jour)
 # ---------------------------------------------------------------------------
+def process_payload(payload: dict) -> FinalExtraction:
+    raw_text = payload.get("full_text", "")
+    source_url = payload.get("source_url")
 
-def process_raw_text(raw_text: str, source_url: Optional[str] = None) -> FinalExtraction:
+    # 1. Analyse IA & Regex sur le texte brut
     identifiers = extract_identifiers(raw_text)
     raw_entities = run_gliner_extraction(raw_text)
+    
+    # ✅ LA CORRECTION EST ICI : On remet l'étape de scoring (disambiguate)
     scored = disambiguate(raw_entities, identifiers.anchor_positions, len(raw_text))
     selected = select_final_entities(scored, raw_text)
 
+    # 2. On récupère les données de Scrapy
+    scrapy_company = payload.get("company_name")
+    scrapy_phones = payload.get("phones")
+    scrapy_ice = payload.get("ice")
+    scrapy_rc = payload.get("rc")
+    scrapy_html_sector = payload.get("html_sector") # Secteur extrait via tes balises HTML
+
+    # 3. Tueur d'hallucinations de l'IA
+    ai_sector = selected["sector"]
+    if ai_sector and "financi" in ai_sector.lower():
+        ai_sector = None  # On détruit systématiquement "financières" venant de l'IA
+
+    # 4. La Fusion (Scrapy > IA)
+    final_company = scrapy_company if scrapy_company else selected["company"]
+    final_phones = scrapy_phones if scrapy_phones else identifiers.phones[:2]
+    
+    # On prend le secteur HTML de Scrapy. S'il n'y en a pas, on prend l'IA (nettoyée).
+    final_sector = scrapy_html_sector if scrapy_html_sector else ai_sector
+
     return FinalExtraction(
         source_url=source_url,
-        company=selected["company"],
+        company=final_company,
         directors=[Director(**d) for d in selected["directors"]],
         address=selected["address"],
         city=selected["city"],
-        sector=selected["sector"],
-        phone=identifiers.phones[:2],
-        ice=identifiers.ice,
-        rc=identifiers.rc,
-        capital=selected["capital"]
+        sector=final_sector,
+        phone=final_phones,
+        ice=scrapy_ice, 
+        rc=scrapy_rc,   
+        capital=selected["capital"] 
     )
-
 # ---------------------------------------------------------------------------
-# 6. CONSOMMATEUR RABBITMQ
+# 6. CONSOMMATEUR RABBITMQ (Mise à jour)
 # ---------------------------------------------------------------------------
 
-def parse_message_body(body: bytes) -> Tuple[str, Optional[str]]:
+def parse_message_body(body: bytes) -> dict:
+    # On retourne TOUT le dictionnaire (payload) au lieu de juste le texte
     decoded = body.decode("utf-8", errors="replace")
     try:
         payload = json.loads(decoded)
+        if isinstance(payload, dict):
+            return payload
     except json.JSONDecodeError:
-        return decoded, None
-
-    if isinstance(payload, dict):
-        raw_text = payload.get("full_text") or payload.get("raw_text") or ""
-        source_url = payload.get("source_url")
-        return raw_text, source_url
-
-    return decoded, None
+        pass
+    return {"full_text": decoded}
 
 def on_message(channel, method, properties, body):
     try:
-        raw_text, source_url = parse_message_body(body)
+        payload = parse_message_body(body)
+        raw_text = payload.get("full_text", "")
+        source_url = payload.get("source_url")
 
         if not raw_text or not raw_text.strip():
             logger.warning("Message vide reçu, acquittement sans traitement.")
             channel.basic_ack(delivery_tag=method.delivery_tag)
             return
 
-        logger.info("Traitement de : %s", source_url or "(source inconnue)")
-        extraction = process_raw_text(raw_text, source_url=source_url)
+        company_name = payload.get("company_name", "Entreprise inconnue")
+        logger.info("Traitement de : %s (%s)", company_name, source_url)
+
+        # On envoie le payload complet à la fonction de fusion
+        extraction = process_payload(payload)
 
         print(json.dumps(extraction.model_dump(), ensure_ascii=False, indent=2))
         channel.basic_ack(delivery_tag=method.delivery_tag)
@@ -431,7 +455,6 @@ def on_message(channel, method, properties, body):
     except Exception:
         logger.exception("Échec du traitement du message — renvoi en file (requeue).")
         channel.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
-
 def main():
     _load_gliner_model()
     parameters = pika.URLParameters(RABBITMQ_URL)
