@@ -8,7 +8,7 @@ sans télécharger de modèle.
 import sys
 sys.path.insert(0, ".")
 
-from ai_worker import RawEntity, disambiguate, select_final_entities
+from workers.ai_worker import RawEntity, disambiguate, select_final_entities
 
 FAILURES = 0
 
