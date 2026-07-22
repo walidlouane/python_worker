@@ -1,0 +1,12 @@
+name: python-worker
+
+services:
+  scrapy-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

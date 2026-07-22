@@ -7,21 +7,21 @@ COLLECTORS = {
         "domain": "charika.ma",
         "category": "collectors",
         "class": CharikaSpider,
+        "spider_type": "HTML",
+        "description": "Collects Moroccan company profiles from charika.ma.",
     },
     "icemaroc": {
         "label": "ICE Maroc API",
         "domain": "icemaroc.com",
         "category": "collectors",
         "class": IcemarocSpider,
+        "spider_type": "API",
+        "description": "Collects company data from the ICE Maroc search API.",
     },
 }
 
 # Futur Phase 3 : news, tenders, job boards
-SIGNALS = {
-    # "medias24": {...},
-    # "marchespublics": {...},
-    # "rekrute": {...},
-}
+SIGNALS = {}
 
 SPIDERS = {**COLLECTORS, **SIGNALS}
 
@@ -32,6 +32,10 @@ def get_spider_class(name: str):
         available = ", ".join(sorted(SPIDERS))
         raise ValueError(f"Spider inconnu '{name}'. Disponibles: {available}")
     return SPIDERS[key]["class"]
+
+
+def get_spider_config(name: str) -> dict:
+    return SPIDERS[get_spider_key(name)]
 
 
 def get_spider_category(name: str) -> str:
@@ -59,3 +63,17 @@ def list_spiders(category: str | None = None) -> list[str]:
     if category == "signals":
         return sorted(SIGNALS)
     return sorted(SPIDERS)
+
+
+def list_spider_registrations() -> list[dict]:
+    registrations = []
+    for spider_name, config in SPIDERS.items():
+        registrations.append(
+            {
+                "spiderName": spider_name,
+                "displayName": config["label"],
+                "type": config["spider_type"],
+                "description": config.get("description", ""),
+            }
+        )
+    return registrations

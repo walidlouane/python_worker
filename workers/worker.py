@@ -2,11 +2,13 @@ import json
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pika
 
 from config import DEFAULT_SOURCE, RABBITMQ_URL, URL_TO_CRAWL_QUEUE
+from pipelines.register import publish_spider_registrations
 
 WORKERS_DIR = Path(__file__).resolve().parent
 
@@ -43,12 +45,26 @@ def build_spider_command(job: dict) -> list[str]:
     return cmd
 
 
+def wait_for_rabbitmq(retries: int = 30, delay: float = 2.0) -> None:
+    for attempt in range(1, retries + 1):
+        try:
+            connection = pika.BlockingConnection(pika.URLParameters(RABBITMQ_URL))
+            connection.close()
+            return
+        except pika.exceptions.AMQPConnectionError:
+            print(f"RabbitMQ indisponible ({attempt}/{retries}), nouvel essai dans {delay}s...")
+            time.sleep(delay)
+
+    raise SystemExit("Impossible de se connecter à RabbitMQ.")
+
+
 def start_worker():
     print("Tentative de connexion à RabbitMQ...")
+    wait_for_rabbitmq()
+    publish_spider_registrations()
     connection = pika.BlockingConnection(pika.URLParameters(RABBITMQ_URL))
     channel = connection.channel()
     channel.queue_declare(queue=URL_TO_CRAWL_QUEUE, durable=True)
-    channel.queue_declare(queue="document_queue", durable=True)
 
     print(f"[*] Connexion RÉUSSIE. En attente sur '{URL_TO_CRAWL_QUEUE}'...")
 

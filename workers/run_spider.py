@@ -12,6 +12,7 @@ if str(WORKERS_DIR) not in sys.path:
     sys.path.insert(0, str(WORKERS_DIR))
 
 from spiders.registry import detect_spider_from_url, get_spider_class, list_spiders  # noqa: E402
+from pipelines.register import publish_spider_registrations  # noqa: E402
 
 SCRAPY_SETTINGS = {
     "USER_AGENT": (
@@ -68,6 +69,8 @@ def main():
         crawl_kwargs["url"] = args.url
     if args.query:
         crawl_kwargs["query"] = args.query
+
+    publish_spider_registrations()
 
     process = CrawlerProcess(settings=SCRAPY_SETTINGS)
     process.crawl(spider_cls, **crawl_kwargs)
