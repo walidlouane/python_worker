@@ -11,6 +11,16 @@ class DataCleaningPipeline:
     SECTOR_PATTERN = re.compile(
         r"(?i)(?:secteur d['’]\s*)?activit[ée]s?\s*[:\-]?\s*(?:\.\s*)?([^\.]{5,150})"
     )
+    CITY_PATTERN = re.compile(
+        r"(?i)(?:ville|city|localit[ée])\s*[:\-]\s*([A-Za-zÀ-ÿ'\-\s]{2,60})"
+    )
+
+    @staticmethod
+    def _normalize_city(value):
+        city = re.sub(r"\s+", " ", value or "").strip(" .,-")
+        if not city or city.lower() in {"unknown", "n/a", "na"}:
+            return None
+        return city.title()
 
     @staticmethod
     def _normalize_text(text):
@@ -49,6 +59,13 @@ class DataCleaningPipeline:
 
         if not item.get("html_sector") and item.get("sector"):
             item["html_sector"] = item["sector"]
+
+        if not item.get("city"):
+            city_match = self.CITY_PATTERN.search(full_text)
+            if city_match:
+                item["city"] = self._normalize_city(city_match.group(1))
+        elif item.get("city"):
+            item["city"] = self._normalize_city(item["city"])
 
         item["cleaning_status"] = "cleaned"
         item.setdefault("status", "ready_for_ai")

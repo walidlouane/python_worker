@@ -38,7 +38,7 @@ class IcemarocSpider(scrapy.Spider):
         company_name = entreprise.get("raison_sociale", "").strip()
         ice = entreprise.get("ice", "").strip()
         rc = entreprise.get("num_rc", "").strip()
-        city = entreprise.get("ville_rc", "").strip()
+        city = (entreprise.get("ville_rc") or "").strip().title() or None
         capital = entreprise.get("capital", "").strip()
         raw_sector = entreprise.get("activite", "")
         clean_sector = " ".join(raw_sector.split()).strip("- ")

@@ -3,6 +3,30 @@ import re
 import scrapy
 
 
+def extract_charika_address(response) -> str | None:
+    address = response.xpath(
+        'normalize-space(//b[contains(normalize-space(.), "Adresse")]/following::label[1]/text())'
+    ).get()
+    if address:
+        return address.strip()
+    return None
+
+
+def city_from_address(address: str | None) -> str | None:
+    if not address:
+        return None
+
+    parts = [part.strip() for part in address.split("-") if part.strip()]
+    if not parts:
+        return None
+
+    city = parts[-1].strip()
+    if len(city) < 2:
+        return None
+
+    return city.title()
+
+
 class CharikaSpider(scrapy.Spider):
     """Collecte fiches entreprises depuis charika.ma."""
 
@@ -55,7 +79,12 @@ class CharikaSpider(scrapy.Spider):
         raw_elements = response.xpath(xpath_query).getall()
         clean_text = " . ".join(t.strip() for t in raw_elements if t.strip())
 
+        address = extract_charika_address(response)
+        city = city_from_address(address)
+
         print(f"[CharikaSpider] Entreprise: {company_name}")
+        if city:
+            print(f"[CharikaSpider] Ville: {city}")
 
         yield {
             "source": "charika",
@@ -63,6 +92,8 @@ class CharikaSpider(scrapy.Spider):
             "source_url": response.url,
             "company_name": company_name,
             "html_sector": xpath_sector,
+            "city": city,
+            "address": address,
             "full_text": clean_text,
             "status": "ready_for_ai",
         }
